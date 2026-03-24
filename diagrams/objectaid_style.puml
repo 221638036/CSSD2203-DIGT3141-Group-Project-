@@ -1,0 +1,135 @@
+@startuml ObjectAidStyle
+' ObjectAid-like visual style
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam classFontName Arial
+skinparam defaultFontSize 12
+skinparam classFontSize 12
+
+' Interfaces and enums
+interface IProgressionService
+interface IStatFormula
+interface BattleObserver
+enum HeroClass
+
+' Core domain
+class Hero {
+  - String name
+  - HeroClass heroClass
+  - int level
+  - int attack
+  - int defense
+  - int maxHp
+  - int currentHp
+  - int maxMana
+  - int currentMana
+  - int experience
+  - ClassProgression classProgression
+  + Hero(String, HeroClass)
+  + levelUp(HeroClass) : HeroClass
+  + addExperience(int) : boolean
+  + calculateDamage(Hero) : int
+}
+
+class ClassProgression {
+  - int[] classLevels
+  - boolean specUnlocked
+  - boolean isHybrid
+  - HeroClass primaryClass
+  - HeroClass secondaryClass
+  + recordLevelIn(HeroClass) : HeroClass
+  + getSpecialisation(HeroClass) : HeroClass
+  + resolveHybrid(HeroClass, HeroClass) : HeroClass
+}
+
+class HeroProgressionSystem {
+  - IStatFormula formula
+  - ClassTree classTree
+  - AbilityRegistry abilityRegistry
+  + awardXp(Hero, int) : String
+  + previewLevelUp(Hero, HeroClass) : StatPreview
+  + xpToNextLevel(Hero) : int
+}
+
+class StatFormula {
+  + xpNeeded(int) : int
+  + cumulativeXpForLevel(int) : int
+  + atkGrowth(HeroClass) : int
+}
+
+class EnemyFactory <<abstract>> {
+  + factoryMethod() : EnemyTemplate
+  + generateParty(int) : Party
+}
+
+class StandardEnemyFactory
+class EliteEnemyFactory
+
+class EnemyTemplate {
+  - int level
+  - int scaledAtk
+  - int scaledDef
+  - int scaledHp
+  + toHero(String) : Hero
+}
+
+class BattleEngine {
+  - Party playerParty
+  - Party enemyParty
+  - List<Hero> turnOrder
+  + startBattle(Party, Party)
+  + executeTurn(BattleAction, Hero, int) : String
+}
+
+class PvECampaignManager {
+  - GameRepository repo
+  - ProfileManager profileManager
+  - BattleEngine battleEngine
+  - InnManager innManager
+  - EnemyFactory enemyFactory
+  - IProgressionService progression
+  + startCampaign(UserProfile, Hero) : CampaignProgress
+  + visitNextRoom(UserProfile) : String
+}
+
+' Small helpers / nested types
+class HeroProgressionSystem.ClassTree
+class HeroProgressionSystem.AbilityRegistry
+class HeroProgressionSystem.StatPreview
+
+' Relationships (associations, implementations, productions)
+Hero "1" *-- "1" ClassProgression : has
+Hero --> HeroClass : uses
+ClassProgression ..> HeroClass : uses
+
+HeroProgressionSystem ..|> IProgressionService
+StatFormula ..|> IStatFormula
+HeroProgressionSystem --> IStatFormula : uses
+HeroProgressionSystem o-- HeroProgressionSystem.ClassTree
+HeroProgressionSystem o-- HeroProgressionSystem.AbilityRegistry
+HeroProgressionSystem o-- HeroProgressionSystem.StatPreview
+
+EnemyFactory <|-- StandardEnemyFactory
+EnemyFactory <|-- EliteEnemyFactory
+EnemyFactory --> EnemyTemplate : factoryMethod()
+EnemyTemplate --> Hero : toHero()
+
+BattleEngine ..> BattleObserver : notifies
+PvECampaignManager --> BattleEngine
+PvECampaignManager --> EnemyFactory
+PvECampaignManager --> IProgressionService
+PvECampaignManager --> GameRepository
+PvECampaignManager --> InnManager
+PvECampaignManager --> ProfileManager
+
+' Notes
+note top of PvECampaignManager
+  Façade coordinating campaign flow
+end note
+
+' Styling to mimic ObjectAid compact boxes
+skinparam classAttributeIconSize 0
+skinparam classFontSize 11
+skinparam classHeaderBackgroundColor #EEEEEE
+
+@enduml
