@@ -28,17 +28,19 @@ public class MainMenuPanel extends JPanel {
         JButton newCampaignBtn = UI.successButton("⚔  New PvE Campaign");
         JButton resumeBtn      = UI.primaryButton("▶  Resume Campaign");
         JButton pvpBtn         = UI.purpleButton("🏆  PvP Battle");
+        JButton leaderboardBtn = UI.goldButton("🏅  Hall of Fame");
         JButton profileBtn     = UI.goldButton("👤  My Profile");
         JButton logoutBtn      = UI.dangerButton("⬅  Logout");
 
         newCampaignBtn.setFont(new Font("SansSerif", Font.BOLD, 14));
         resumeBtn.setFont(new Font("SansSerif", Font.BOLD, 14));
         pvpBtn.setFont(new Font("SansSerif", Font.BOLD, 14));
+        leaderboardBtn.setFont(new Font("SansSerif", Font.BOLD, 14));
         profileBtn.setFont(new Font("SansSerif", Font.BOLD, 14));
         logoutBtn.setFont(new Font("SansSerif", Font.BOLD, 14));
 
         int row = 2;
-        for (JButton btn : new JButton[]{newCampaignBtn, resumeBtn, pvpBtn, profileBtn, logoutBtn}) {
+        for (JButton btn : new JButton[]{newCampaignBtn, resumeBtn, pvpBtn, leaderboardBtn, profileBtn, logoutBtn}) {
             g.gridy = row++;
             add(btn, g);
         }
@@ -53,6 +55,7 @@ public class MainMenuPanel extends JPanel {
             }
         });
         pvpBtn.addActionListener(e -> GameStateManager.getInstance().showPvpInvite());
+        leaderboardBtn.addActionListener(e -> GameStateManager.getInstance().showLeaderboard());
         profileBtn.addActionListener(e -> GameStateManager.getInstance().showProfile());
         logoutBtn.addActionListener(e -> GameStateManager.getInstance().logout());
     }

@@ -14,6 +14,7 @@ public class InnPanel extends JPanel {
     private final JTextArea partyArea;
     private final JPanel    shopPanel;
     private final JPanel    recruitPanel;
+    private final JPanel    inventoryPanel;
 
     public InnPanel() {
         setLayout(new BorderLayout(10, 10));
@@ -22,23 +23,28 @@ public class InnPanel extends JPanel {
 
         add(UI.title("🏨  The Wanderer's Inn"), BorderLayout.NORTH);
 
-        // ── Centre: three columns ─────────────────────────────────────────────
-        JPanel centre = UI.bgPanel(new GridLayout(1, 3, 10, 0));
+        // ── Centre: four columns ─────────────────────────────────────────────
+        JPanel centre = UI.bgPanel(new GridLayout(1, 4, 10, 0));
 
         // Left – party status
         partyArea = UI.logArea();
         partyArea.setBackground(UI.BG_PANEL);
         centre.add(UI.scrollPane(partyArea, "Party Status", UI.ACCENT_GOLD));
 
-        // Middle – shop
+        // Shop
         shopPanel = UI.darkPanel(null);
         shopPanel.setLayout(new BoxLayout(shopPanel, BoxLayout.Y_AXIS));
         centre.add(UI.scrollPane(shopPanel, "Shop", UI.ACCENT_GOLD));
 
-        // Right – recruit
+        // Recruit
         recruitPanel = UI.darkPanel(null);
         recruitPanel.setLayout(new BoxLayout(recruitPanel, BoxLayout.Y_AXIS));
         centre.add(UI.scrollPane(recruitPanel, "Recruit Heroes", UI.ACCENT_GOLD));
+
+        // Inventory
+        inventoryPanel = UI.darkPanel(null);
+        inventoryPanel.setLayout(new BoxLayout(inventoryPanel, BoxLayout.Y_AXIS));
+        centre.add(UI.scrollPane(inventoryPanel, "Inventory", UI.ACCENT_GOLD));
 
         add(centre, BorderLayout.CENTER);
 
@@ -82,7 +88,7 @@ public class InnPanel extends JPanel {
         // Shop
         shopPanel.removeAll();
         for (Item item : GameFactory.createInnShopItems()) {
-            shopPanel.add(makeShopRow(item, party, cs));
+            shopPanel.add(makeShopRow(item, party));
             shopPanel.add(Box.createVerticalStrut(4));
         }
 
@@ -90,16 +96,52 @@ public class InnPanel extends JPanel {
         recruitPanel.removeAll();
         List<Hero> recruits = GameFactory.createRecruitableHeroes(cs.getCurrentRoom());
         for (Hero recruit : recruits) {
-            int cost = recruit.getLevel() * 30;
+            // Level 1 heroes are free, others cost 200g per level
+            int cost = recruit.getLevel() == 1 ? 0 : recruit.getLevel() * 200;
             recruitPanel.add(makeRecruitRow(recruit, cost, party));
             recruitPanel.add(Box.createVerticalStrut(4));
+        }
+
+        // Inventory
+        inventoryPanel.removeAll();
+        if (party.getInventory().isEmpty()) {
+            JLabel none = UI.label("  Inventory empty.", UI.TEXT_DIM);
+            none.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+            inventoryPanel.add(none);
+        } else {
+            for (Item item : party.getInventory()) {
+                JPanel row = UI.darkPanel(new BorderLayout(6, 0));
+                row.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
+                row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+
+                JLabel lbl = UI.label(item.getName() + " (" + item.getValue() + ")", UI.TEXT_MAIN);
+                JButton useBtn = UI.goldButton("Use");
+                useBtn.addActionListener(e -> {
+                    List<Hero> members = party.getAliveMembers();
+                    if (members.isEmpty()) return;
+                    String[] names = members.stream().map(Hero::getName).toArray(String[]::new);
+                    String chosen = (String) JOptionPane.showInputDialog(this,
+                        "Use " + item.getName() + " on:", "Inventory", JOptionPane.PLAIN_MESSAGE, null, names, names[0]);
+                    if (chosen != null) {
+                        members.stream().filter(h -> h.getName().equals(chosen)).findFirst().ifPresent(target -> {
+                            item.use(target);
+                            party.removeItem(item);
+                            refresh();
+                        });
+                    }
+                });
+
+                row.add(lbl, BorderLayout.CENTER);
+                row.add(useBtn, BorderLayout.EAST);
+                inventoryPanel.add(row);
+            }
         }
 
         revalidate();
         repaint();
     }
 
-    private JPanel makeShopRow(Item item, Party party, CampaignState cs) {
+    private JPanel makeShopRow(Item item, Party party) {
         JPanel row = UI.darkPanel(new BorderLayout(6, 0));
         row.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
         row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
@@ -108,19 +150,10 @@ public class InnPanel extends JPanel {
         JButton buyBtn = UI.goldButton("Buy");
         buyBtn.setEnabled(party.canAfford(item.getCost()));
         buyBtn.addActionListener(e -> {
-            List<Hero> members = party.getAliveMembers();
-            if (members.isEmpty() || !party.canAfford(item.getCost())) return;
-            String[] names = members.stream().map(Hero::getName).toArray(String[]::new);
-            String chosen = (String) JOptionPane.showInputDialog(this,
-                "Use " + item.getName() + " on:", "Choose Hero",
-                JOptionPane.PLAIN_MESSAGE, null, names, names[0]);
-            if (chosen != null) {
-                members.stream().filter(h -> h.getName().equals(chosen)).findFirst().ifPresent(target -> {
-                    party.spendGold(item.getCost());
-                    item.use(target);
-                    refresh();
-                });
-            }
+            if (!party.canAfford(item.getCost())) return;
+            party.spendGold(item.getCost());
+            party.addItem(new Item(item.getName(), item.getType(), item.getValue(), item.getCost()));
+            refresh();
         });
         row.add(lbl, BorderLayout.CENTER);
         row.add(buyBtn, BorderLayout.EAST);

@@ -22,13 +22,14 @@ public class MainWindow extends JFrame implements GameStateManager.StateListener
     private ProfilePanel     profilePanel;
     private PvpPanel         pvpPanel;
     private GameOverPanel    gameOverPanel;
+    private LeaderboardPanel leaderboardPanel;
 
     public MainWindow() {
         super("Legends of Sword and Wand");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(960, 680);
+        setSize(1200, 840);
         setLocationRelativeTo(null);
-        setResizable(false);
+        setResizable(true);
 
         cardLayout = new CardLayout();
         cardPanel  = new JPanel(cardLayout);
@@ -41,6 +42,7 @@ public class MainWindow extends JFrame implements GameStateManager.StateListener
         profilePanel     = new ProfilePanel();
         pvpPanel         = new PvpPanel();
         gameOverPanel    = new GameOverPanel();
+        leaderboardPanel = new LeaderboardPanel();
 
         cardPanel.add(loginPanel,       GameState.LOGIN.name());
         cardPanel.add(mainMenuPanel,    GameState.MAIN_MENU.name());
@@ -50,6 +52,7 @@ public class MainWindow extends JFrame implements GameStateManager.StateListener
         cardPanel.add(profilePanel,     GameState.PROFILE_VIEW.name());
         cardPanel.add(pvpPanel,         GameState.PVP_INVITE.name());
         cardPanel.add(gameOverPanel,    GameState.GAME_OVER.name());
+        cardPanel.add(leaderboardPanel, GameState.LEADERBOARD.name());
 
         add(cardPanel);
         GameStateManager.getInstance().addListener(this);
@@ -66,6 +69,7 @@ public class MainWindow extends JFrame implements GameStateManager.StateListener
                 case INN:          innPanel.refresh();         break;
                 case PROFILE_VIEW: profilePanel.refresh();     break;
                 case PVP_INVITE:   pvpPanel.refresh();         break;
+                case LEADERBOARD:  leaderboardPanel.refresh(); break;
                 default: break;
             }
             showPanel(newState);

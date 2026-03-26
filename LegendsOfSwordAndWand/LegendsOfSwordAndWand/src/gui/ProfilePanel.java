@@ -11,6 +11,7 @@ public class ProfilePanel extends JPanel {
 
     private final JLabel    userLabel;
     private final JLabel    bestScoreLabel;
+    private final JLabel    statsLabel;
     private final JPanel    partiesPanel;
     private final JTextArea scoresArea;
 
@@ -20,11 +21,13 @@ public class ProfilePanel extends JPanel {
         setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
 
         // Header
-        JPanel header = UI.bgPanel(new GridLayout(2, 1, 0, 2));
+        JPanel header = UI.bgPanel(new GridLayout(3, 1, 0, 2));
         userLabel      = UI.title("Profile");
         bestScoreLabel = UI.centeredLabel("Best Score: 0", UI.TEXT_DIM, Font.PLAIN, 14);
+        statsLabel     = UI.centeredLabel("Battles: 0W - 0L", UI.TEXT_DIM, Font.PLAIN, 14);
         header.add(userLabel);
         header.add(bestScoreLabel);
+        header.add(statsLabel);
         add(header, BorderLayout.NORTH);
 
         // Centre
@@ -54,10 +57,45 @@ public class ProfilePanel extends JPanel {
 
         userLabel.setText("⚔  " + profile.getUsername() + "'s Profile");
         bestScoreLabel.setText("Best Score:  " + profile.getBestScore());
+        statsLabel.setText("Battles:  " + profile.getWins() + "W - " + profile.getLosses() + "L  |  Win Rate: " 
+            + (profile.getTotalBattles() > 0 ? String.format("%.1f%%", (double)profile.getWins() / profile.getTotalBattles() * 100) : "N/A"));
 
         // Parties
         partiesPanel.removeAll();
         List<Party> parties = profile.getSavedParties();
+        
+        // If campaign is complete and party not yet saved, offer to save it
+        CampaignState activeCampaign = profile.getActiveCampaign();
+        if (activeCampaign != null && activeCampaign.isComplete() && !activeCampaign.isInBattle()) {
+            JPanel saveBtn = UI.darkPanel(new BorderLayout(6, 0));
+            saveBtn.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(UI.ACCENT_GOLD, 2),
+                BorderFactory.createEmptyBorder(8, 10, 8, 10)));
+            saveBtn.setMaximumSize(new Dimension(Integer.MAX_VALUE, 50));
+            
+            JLabel msg = UI.label("Campaign Complete! Save this party?", UI.ACCENT_GOLD);
+            saveBtn.add(msg, BorderLayout.CENTER);
+            
+            if (!profile.hasMaxParties()) {
+                JButton savePartyBtn = UI.successButton("Save Party");
+                savePartyBtn.addActionListener(e -> {
+                    Party campaignParty = activeCampaign.getParty();
+                    if (profile.saveParty(campaignParty)) {
+                        profile.setActiveCampaign(null);
+                        FileDataManager.getInstance().saveProfile(profile);
+                        refresh();
+                        JOptionPane.showMessageDialog(this, "Party saved for PvP!", "Success", JOptionPane.INFORMATION_MESSAGE);
+                    } else {
+                        JOptionPane.showMessageDialog(this, "Cannot save - max parties reached.", "Error", JOptionPane.ERROR_MESSAGE);
+                    }
+                });
+                saveBtn.add(savePartyBtn, BorderLayout.EAST);
+            }
+            
+            partiesPanel.add(saveBtn);
+            partiesPanel.add(Box.createVerticalStrut(8));
+        }
+        
         if (parties.isEmpty()) {
             JLabel none = UI.label("  No saved parties yet.", UI.TEXT_DIM);
             none.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));

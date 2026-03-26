@@ -12,6 +12,8 @@ public class Profile implements Serializable {
     private List<Party> savedParties = new ArrayList<>();
     private List<Integer> scores = new ArrayList<>();
     private CampaignState activeCampaign;
+    private int wins = 0;
+    private int losses = 0;
 
     public Profile(String username, String password) {
         this.username = username; this.password = password;
@@ -35,4 +37,9 @@ public class Profile implements Serializable {
     public List<Integer> getScores()                    { return scores; }
     public CampaignState getActiveCampaign()            { return activeCampaign; }
     public void setActiveCampaign(CampaignState c)      { this.activeCampaign = c; }
+    public void incrementWins()                         { this.wins++; }
+    public void incrementLosses()                       { this.losses++; }
+    public int getWins()                                { return wins; }
+    public int getLosses()                              { return losses; }
+    public int getTotalBattles()                        { return wins + losses; }
 }

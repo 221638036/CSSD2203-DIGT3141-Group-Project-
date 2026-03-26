@@ -12,8 +12,10 @@ public class GameFactory {
 
     public static List<Enemy> createEnemyGroup(int roomNumber) {
         Random rand = new Random();
+        // Enemy level scales: room 1-4 = level 1, room 5-9 = level 1-2, increases gradually
         int level = Math.max(1, roomNumber / 5 + 1);
-        int count = 1 + rand.nextInt(Math.min(3, 1 + roomNumber / 10));
+        // Enemy count: 1-5 units as per TC04
+        int count = 1 + rand.nextInt(5);
         String[] names = {"Goblin", "Orc", "Skeleton", "Troll", "Dark Mage", "Bandit", "Wolf", "Vampire"};
         List<Enemy> group = new ArrayList<>();
         for (int i = 0; i < count; i++)

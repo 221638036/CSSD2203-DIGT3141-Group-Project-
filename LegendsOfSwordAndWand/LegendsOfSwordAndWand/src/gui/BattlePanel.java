@@ -15,6 +15,7 @@ public class BattlePanel extends JPanel implements BattleObserver {
     private JPanel    actionPanel;
     private JTextArea battleLog;
     private BattleEngine engine;
+    private int currentTargetIndex = 0;
 
     public BattlePanel() {
         setLayout(new BorderLayout(6, 6));
@@ -71,6 +72,35 @@ public class BattlePanel extends JPanel implements BattleObserver {
 
     private void updateDisplay() {
         if (engine == null) return;
+
+        if (engine.isPvpMode()) {
+            if (engine.isOpponentTurn()) {
+                enemyPanel.setBorder(BorderFactory.createTitledBorder(
+                    BorderFactory.createLineBorder(UI.ACCENT_RED), "Your Party (Target)",
+                    0, 0, UI.FONT_SMALL, UI.ACCENT_RED));
+                heroPanel.setBorder(BorderFactory.createTitledBorder(
+                    BorderFactory.createLineBorder(UI.ACCENT_BLUE), "Opponent Party (Acting)",
+                    0, 0, UI.FONT_SMALL, UI.ACCENT_BLUE));
+            } else {
+                enemyPanel.setBorder(BorderFactory.createTitledBorder(
+                    BorderFactory.createLineBorder(UI.ACCENT_RED), "Opponent Party (Target)",
+                    0, 0, UI.FONT_SMALL, UI.ACCENT_RED));
+                heroPanel.setBorder(BorderFactory.createTitledBorder(
+                    BorderFactory.createLineBorder(UI.ACCENT_BLUE), "Your Party (Acting)",
+                    0, 0, UI.FONT_SMALL, UI.ACCENT_BLUE));
+            }
+
+            turnLabel.setText(engine.isOpponentTurn() ? "Opponent's Turn" : "Your Turn");
+        } else {
+            enemyPanel.setBorder(BorderFactory.createTitledBorder(
+                BorderFactory.createLineBorder(UI.ACCENT_RED), "Enemies",
+                0, 0, UI.FONT_SMALL, UI.ACCENT_RED));
+            heroPanel.setBorder(BorderFactory.createTitledBorder(
+                BorderFactory.createLineBorder(UI.ACCENT_BLUE), "Your Party",
+                0, 0, UI.FONT_SMALL, UI.ACCENT_BLUE));
+            turnLabel.setText("Battle!");
+        }
+
         rebuildEnemyPanel();
         rebuildHeroPanel();
         rebuildActionPanel();
@@ -80,42 +110,130 @@ public class BattlePanel extends JPanel implements BattleObserver {
 
     private void rebuildEnemyPanel() {
         enemyPanel.removeAll();
-        for (Enemy e : engine.getAliveEnemies()) {
-            enemyPanel.add(makeEnemyCard(e));
-        }
-        // Show defeated enemies greyed out
-        for (Enemy e : engine.getEnemies()) {
-            if (!e.isAlive()) enemyPanel.add(makeDefeatedEnemyCard(e));
+        if (engine.isPvpMode()) {
+            Party enemyParty = engine.getOtherParty();
+            Hero current = engine.getCurrentHero();
+            for (Hero h : enemyParty.getMembers()) {
+                enemyPanel.add(makeHeroCard(h, false));
+            }
+            for (Hero h : enemyParty.getMembers()) {
+                if (!h.isAlive()) enemyPanel.add(makeDefeatedHeroCard(h));
+            }
+        } else {
+            for (Enemy e : engine.getAliveEnemies()) {
+                enemyPanel.add(makeEnemyCard(e));
+            }
+            // Show defeated enemies greyed out
+            for (Enemy e : engine.getEnemies()) {
+                if (!e.isAlive()) enemyPanel.add(makeDefeatedEnemyCard(e));
+            }
         }
     }
 
     private void rebuildHeroPanel() {
         heroPanel.removeAll();
-        Hero current = engine.getCurrentHero();
-        for (Hero h : engine.getPlayerParty().getMembers()) {
-            heroPanel.add(makeHeroCard(h, h == current));
+        if (engine.isPvpMode()) {
+            Party playerParty = engine.getCurrentParty();
+            Hero current = engine.getCurrentHero();
+            for (Hero h : playerParty.getMembers()) {
+                heroPanel.add(makeHeroCard(h, h == current));
+            }
+        } else {
+            Hero current = engine.getCurrentHero();
+            for (Hero h : engine.getCurrentParty().getMembers()) {
+                heroPanel.add(makeHeroCard(h, h == current));
+            }
         }
     }
 
     private void rebuildActionPanel() {
         actionPanel.removeAll();
         Hero current = engine.getCurrentHero();
-        if (current == null || !current.isAlive() || engine.isBattleOver()) return;
+        boolean canAct = current != null && current.isAlive() && !engine.isBattleOver();
 
-        turnLabel.setText("⚔  " + current.getName() + "'s turn  [" + current.getHeroClass() + "]");
+        if (!engine.isPvpMode() && canAct) {
+            turnLabel.setText("⚔  " + current.getName() + "'s turn  [" + current.getHeroClass() + "]");
+        }
 
-        List<BattleAction> actions = BattleActions.getActionsForHero(current);
         List<Enemy> alive = engine.getAliveEnemies();
+        if (canAct) {
+            List<BattleAction> actions = BattleActions.getActionsForHero(current);
 
-        for (BattleAction action : actions) {
-            JButton btn = UI.button(action.getName(),
-                action.canUse(current) ? new Color(50, 65, 130) : new Color(35, 35, 55));
-            btn.setEnabled(action.canUse(current) && !alive.isEmpty());
-            btn.addActionListener(e -> {
-                engine.playerAction(action, 0);
-                if (!engine.isBattleOver()) updateDisplay();
-            });
-            actionPanel.add(btn);
+            // Add target display and navigation for enemies
+            if (!alive.isEmpty()) {
+                currentTargetIndex = Math.min(currentTargetIndex, alive.size() - 1);
+                JPanel targetNav = UI.bgPanel(new FlowLayout(FlowLayout.CENTER, 6, 0));
+                JButton prevBtn = UI.goldButton("◀ Prev");
+                prevBtn.addActionListener(e -> {
+                    currentTargetIndex = (currentTargetIndex - 1 + alive.size()) % alive.size();
+                    updateDisplay();
+                });
+                String targetName = alive.get(currentTargetIndex).getName();
+                JLabel targetLabel = UI.centeredLabel("Target: " + targetName, UI.ACCENT_RED, Font.BOLD, 11);
+                JButton nextBtn = UI.goldButton("Next ▶");
+                nextBtn.addActionListener(e -> {
+                    currentTargetIndex = (currentTargetIndex + 1) % alive.size();
+                    updateDisplay();
+                });
+                targetNav.add(prevBtn);
+                targetNav.add(targetLabel);
+                targetNav.add(nextBtn);
+                actionPanel.add(targetNav);
+            }
+
+            // Action buttons
+            for (BattleAction action : actions) {
+                JButton btn = UI.button(action.getName(),
+                    action.canUse(current) ? new Color(50, 65, 130) : new Color(35, 35, 55));
+                btn.setEnabled(action.canUse(current) && !alive.isEmpty());
+                btn.addActionListener(e -> {
+                    engine.playerAction(action, currentTargetIndex);
+                    currentTargetIndex = 0;
+                    if (!engine.isBattleOver()) updateDisplay();
+                });
+                actionPanel.add(btn);
+            }
+        }
+
+        // Item usage always in panel as long as inventory exists
+        Party party = engine.getCurrentParty();
+        JButton itemBtn = UI.button("Use Item", new Color(100, 80, 140));
+        itemBtn.setEnabled(!party.getInventory().isEmpty() && canAct);
+        itemBtn.addActionListener(e -> showItemMenu(current, party));
+        actionPanel.add(itemBtn);
+    }
+
+    private void showItemMenu(Hero user, Party party) {
+        List<Item> items = party.getInventory();
+        if (items.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "No items in inventory!", "Inventory Empty", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        String[] itemNames = items.stream()
+            .map(i -> i.getName() + " (+" + i.getValue() + ")")
+            .toArray(String[]::new);
+        int chosen = JOptionPane.showOptionDialog(this, "Choose an item to use:", "Use Item",
+            JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, null, itemNames, itemNames[0]);
+
+        if (chosen >= 0 && chosen < items.size()) {
+            Item item = items.get(chosen);
+            // Choose target (self or other alive hero)
+            List<Hero> heroes = engine.getCurrentParty().getAliveMembers();
+            String[] heroNames = heroes.stream().map(Hero::getName).toArray(String[]::new);
+            String targetName = (String) JOptionPane.showInputDialog(this,
+                "Use " + item.getName() + " on:", "Choose Target",
+                JOptionPane.PLAIN_MESSAGE, null, heroNames, heroNames[0]);
+
+            if (targetName != null) {
+                for (Hero h : heroes) {
+                    if (h.getName().equals(targetName)) {
+                        engine.useItem(user, item, h, party);
+                        if (!engine.isBattleOver()) updateDisplay();
+                        break;
+                    }
+                }
+            }
         }
     }
 
@@ -141,6 +259,16 @@ public class BattlePanel extends JPanel implements BattleObserver {
         card.setPreferredSize(new Dimension(145, 60));
         card.add(UI.centeredLabel(e.getName(), new Color(90, 60, 60), Font.BOLD, 12));
         card.add(UI.centeredLabel("☠ Defeated", new Color(90, 60, 60), Font.ITALIC, 11));
+        return card;
+    }
+
+    private JPanel makeDefeatedHeroCard(Hero h) {
+        JPanel card = new JPanel(new GridLayout(2, 1, 2, 2));
+        card.setBackground(new Color(18, 15, 25));
+        card.setBorder(BorderFactory.createLineBorder(new Color(45, 40, 60)));
+        card.setPreferredSize(new Dimension(155, 60));
+        card.add(UI.centeredLabel(h.getName(), new Color(70, 65, 90), Font.BOLD, 12));
+        card.add(UI.centeredLabel("☠ Defeated", new Color(70, 65, 90), Font.ITALIC, 11));
         return card;
     }
 

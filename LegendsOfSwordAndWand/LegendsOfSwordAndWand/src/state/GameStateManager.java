@@ -4,6 +4,7 @@ import battle.BattleEngine;
 import factory.GameFactory;
 import model.*;
 import persistence.FileDataManager;
+import javax.swing.*;
 import java.util.*;
 
 /** DESIGN PATTERN: State — manages all transitions between game screens */
@@ -99,14 +100,60 @@ public class GameStateManager {
     }
 
     private void handleEndOfCampaign() {
+        // Campaign won - track as victory
+        loggedInProfile.incrementWins();
+        FileDataManager.getInstance().saveProfile(loggedInProfile);
         // GUI will prompt to save party; transition to profile
         transition(GameState.PROFILE_VIEW);
     }
 
     public void battleEnded(boolean won) {
         activeCampaign.setInBattle(false);
+        
+        if (!won) {
+            // TC02: Apply loss penalties
+            // Lose 10% gold
+            Party party = activeCampaign.getParty();
+            int goldLoss = Math.max(1, party.getGold() / 10);
+            party.spendGold(goldLoss);
+            
+            // Lose 30% XP from each hero (but not levels)
+            for (Hero h : party.getMembers()) {
+                int xpLoss = Math.max(1, h.getXp() / 3);  // 30% ≈ 1/3
+                h.removeXp(xpLoss);
+            }
+            
+            // Return to inn (previous room which should be an inn)
+            int currentRoom = activeCampaign.getCurrentRoom();
+            activeCampaign.setCurrentRoom(Math.max(0, currentRoom - 1));
+            activeCampaign.setAtInn(true);
+            
+            // Track loss in profile
+            loggedInProfile.incrementLosses();
+        }
+        
+        // After win, process pending level-ups for heroes (not in PvP)
+        if (won && battleEngine != null && !battleEngine.isPvpMode()) {
+            for (Hero h : activeCampaign.getParty().getAliveMembers()) {
+                while (h.getPendingLevelUps() > 0 && h.getLevel() < 20) {
+                    HeroClass[] options = h.getAvailableLevelUpClasses();
+                    HeroClass defaultChoice = options.length > 0 ? options[0] : h.getHeroClass();
+                    HeroClass choice = (HeroClass) JOptionPane.showInputDialog(null,
+                        h.getName() + " has leveled up! Choose a class path for this level (current " + h.getHeroClass() + "):",
+                        "Level Up Class Choice", JOptionPane.PLAIN_MESSAGE, null, options, defaultChoice);
+                    if (choice == null) {
+                        choice = defaultChoice;
+                    }
+                    h.processLevelUp(choice);
+                }
+                if (h.getLevel() >= 20) {
+                    h.clearPendingLevelUps();
+                }
+            }
+        }
+
         FileDataManager.getInstance().saveProfile(loggedInProfile);
-        transition(won ? GameState.CAMPAIGN_MAP : GameState.GAME_OVER);
+        transition(won ? GameState.CAMPAIGN_MAP : GameState.INN);
     }
 
     public void leaveInn() {
@@ -136,12 +183,9 @@ public class GameStateManager {
         Party myParty  = loggedInProfile.getSavedParties().get(myPartyIndex);
         Party oppParty = opponent.getSavedParties().get(0);
 
-        // Represent opponent heroes as enemies
-        List<Enemy> oppAsEnemies = new ArrayList<>();
-        for (Hero h : oppParty.getMembers())
-            oppAsEnemies.add(new Enemy(h.getName() + " (" + opponentUsername + ")", h.getLevel()));
-
-        battleEngine = new BattleEngine(myParty, oppAsEnemies);
+        // Local player is myParty, opponent is oppParty. Start with opponent's turn.
+        battleEngine = new BattleEngine(myParty, oppParty, true);
+        battleEngine.setOpponentTurn(true);
         transition(GameState.BATTLE);
         return true;
     }
@@ -150,6 +194,7 @@ public class GameStateManager {
     public void showMainMenu()  { transition(GameState.MAIN_MENU); }
     public void showProfile()   { transition(GameState.PROFILE_VIEW); }
     public void showPvpInvite() { transition(GameState.PVP_INVITE); }
+    public void showLeaderboard() { transition(GameState.LEADERBOARD); }
 
     // ── Getters ───────────────────────────────────────────────────────────────
     public GameState getCurrentState()       { return currentState; }

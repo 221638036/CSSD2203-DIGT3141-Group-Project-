@@ -6,7 +6,7 @@ import java.util.List;
 
 public class Party implements Serializable {
     private static final long serialVersionUID = 1L;
-    private static final int MAX_SIZE = 4;
+    private static final int MAX_SIZE = 5;
 
     private String name;
     private List<Hero> members;

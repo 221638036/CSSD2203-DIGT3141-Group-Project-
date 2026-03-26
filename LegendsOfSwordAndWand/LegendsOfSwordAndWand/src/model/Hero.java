@@ -16,6 +16,7 @@ public class Hero implements Serializable {
 
     private int orderLevel, chaosLevel, warriorLevel, mageLevel;
     private HeroClass firstSpecialization = null;
+    private HeroClass secondSpecialization = null;
     private boolean isHybrid = false;
 
     // Base stats per TC10: attack=5, defense=5, HP=100, mana=50
@@ -31,6 +32,7 @@ public class Hero implements Serializable {
     public static final int LEVELUP_MANA    = 2;
 
     private int xp = 0;
+    private int pendingLevelUps = 0;
     private static final int XP_PER_LEVEL = 100;
 
     public Hero(String name, HeroClass startingClass) {
@@ -45,20 +47,87 @@ public class Hero implements Serializable {
         incrementClassLevel(startingClass);
     }
 
-    /** Add XP; returns true if levelled up */
-    public boolean addXp(int amount) {
-        xp += amount;
-        if (xp >= XP_PER_LEVEL) {
-            xp -= XP_PER_LEVEL;
-            levelUp(heroClass);
-            return true;
+    public void addXp(int amount) {
+        if (level >= 20) {
+            xp = 0;
+            return;
         }
-        return false;
+        xp += amount;
+        while (xp >= XP_PER_LEVEL && level < 20) {
+            xp -= XP_PER_LEVEL;
+            pendingLevelUps++;
+        }
+        if (level >= 20) {
+            xp = 0;
+            pendingLevelUps = 0;
+        }
+    }
+
+    public void removeXp(int amount) {
+        xp = Math.max(0, xp - amount);
     }
 
     public int getXp() { return xp; }
 
+    public int getPendingLevelUps() { return pendingLevelUps; }
+    public void spentPendingLevelUp() { if (pendingLevelUps > 0) pendingLevelUps--; }
+
+    public void clearPendingLevelUps() { pendingLevelUps = 0; }
+
+    public HeroClass[] getAvailableLevelUpClasses() {
+        if (level >= 20) return new HeroClass[]{};
+        if (isHybrid) {
+            return new HeroClass[]{heroClass};
+        }
+        if (firstSpecialization == null) {
+            return new HeroClass[]{HeroClass.ORDER, HeroClass.CHAOS, HeroClass.WARRIOR, HeroClass.MAGE};
+        }
+        if (secondSpecialization == null) {
+            // include first specialization and remaining base classes
+            java.util.List<HeroClass> result = new java.util.ArrayList<>();
+            result.add(firstSpecialization);
+            for (HeroClass candidate : new HeroClass[]{HeroClass.ORDER, HeroClass.CHAOS, HeroClass.WARRIOR, HeroClass.MAGE}) {
+                if (candidate != firstSpecialization) result.add(candidate);
+            }
+            return result.toArray(new HeroClass[0]);
+        }
+        return new HeroClass[]{firstSpecialization, secondSpecialization};
+    }
+
+    public void processLevelUp(HeroClass classChoice) {
+        if (pendingLevelUps <= 0) return;
+        if (level >= 20) {
+            clearPendingLevelUps();
+            return;
+        }
+
+        if (isHybrid && classChoice != heroClass) {
+            // once hybrid, class choice fixed
+            return;
+        }
+
+        if (firstSpecialization != null && secondSpecialization == null && classChoice != firstSpecialization) {
+            // Once a second base class path is chosen, lock to these two from now on
+            secondSpecialization = classChoice;
+        }
+
+        if (firstSpecialization != null && secondSpecialization != null && !isHybrid) {
+            if (classChoice != firstSpecialization && classChoice != secondSpecialization) {
+                return;
+            }
+        }
+
+        levelUp(classChoice);
+        spentPendingLevelUp();
+
+        if (level >= 20) {
+            clearPendingLevelUps();
+        }
+    }
+
     public void levelUp(HeroClass classChoice) {
+        if (level >= 20) return;
+
         // Base bonus applied first (TC06)
         maxHp    += LEVELUP_HP;
         maxMana  += LEVELUP_MANA;
@@ -66,15 +135,42 @@ public class Hero implements Serializable {
         defense  += LEVELUP_DEFENSE;
 
         // Then class-specific bonus
-        if (isHybrid) applyHybridGrowth();
-        else {
+        if (isHybrid) {
+            applyHybridGrowth();
+        } else if (heroClass == HeroClass.KNIGHT) {
+            attack += 4;
+            defense += 6;
+        } else if (heroClass == HeroClass.WARLOCK) {
+            attack += 3;
+            defense += 3;
+            maxMana += 5;
+        } else if (heroClass == HeroClass.WIZARD) {
+            maxMana += 3;
+        } else if (heroClass == HeroClass.PRIEST) {
+            maxMana += 5;
+            defense += 2;
+        } else if (heroClass == HeroClass.INVOKER) {
+            attack += 3;
+            maxMana += 5;
+        } else {
             applyClassGrowth(classChoice);
+        }
+
+        // Track class levels only for base classes until hybrid occurs
+        if (!isHybrid) {
             incrementClassLevel(classChoice);
             checkForSpecialization(classChoice);
         }
+
         level++;
         hp = maxHp;
         mana = maxMana;
+
+        if (level >= 20) {
+            level = 20;
+            xp = 0;
+            pendingLevelUps = 0;
+        }
     }
 
     private void applyClassGrowth(HeroClass cls) {
@@ -89,12 +185,12 @@ public class Hero implements Serializable {
 
     private void applyHybridGrowth() {
         switch (heroClass) {
-            case PALADIN:  applyClassGrowth(HeroClass.ORDER);   applyClassGrowth(HeroClass.WARRIOR); break;
-            case HERETIC:  applyClassGrowth(HeroClass.ORDER);   applyClassGrowth(HeroClass.CHAOS);   break;
-            case PROPHET:  applyClassGrowth(HeroClass.ORDER);   applyClassGrowth(HeroClass.MAGE);    break;
-            case ROGUE:    applyClassGrowth(HeroClass.CHAOS);   applyClassGrowth(HeroClass.WARRIOR); break;
-            case SORCERER: applyClassGrowth(HeroClass.CHAOS);   applyClassGrowth(HeroClass.MAGE);    break;
-            case WARLOCK:  applyClassGrowth(HeroClass.WARRIOR); applyClassGrowth(HeroClass.MAGE);    break;
+            case PALADIN:  attack += 2; defense += 3; break;
+            case HERETIC:  attack += 3; maxMana += 5; break;
+            case PROPHET:  maxMana += 5; defense += 2; break;
+            case ROGUE:    attack += 2; defense += 3; break;
+            case SORCERER: attack += 3; maxMana += 5; break;
+            case WARLOCK:  attack += 3; defense += 3; maxMana += 5; break;
             default:       applyClassGrowth(heroClass); break;
         }
     }
@@ -113,9 +209,21 @@ public class Hero implements Serializable {
         int clvl = getClassLevel(cls);
         if (clvl >= 5 && firstSpecialization == null) {
             firstSpecialization = cls;
+            heroClass = getSpecializationClass(cls);
         } else if (clvl >= 5 && firstSpecialization != null && cls != firstSpecialization && !isHybrid) {
+            secondSpecialization = cls;
             isHybrid = true;
             heroClass = resolveHybridClass(firstSpecialization, cls);
+        }
+    }
+
+    private HeroClass getSpecializationClass(HeroClass baseClass) {
+        switch (baseClass) {
+            case ORDER:   return HeroClass.PRIEST;
+            case CHAOS:   return HeroClass.INVOKER;
+            case WARRIOR: return HeroClass.KNIGHT;
+            case MAGE:    return HeroClass.WIZARD;
+            default:      return baseClass;
         }
     }
 
@@ -169,6 +277,7 @@ public class Hero implements Serializable {
     public boolean isStunned()       { return stunned; }
     public void setStunned(boolean s){ this.stunned = s; }
     public boolean isHybrid()        { return isHybrid; }
+    public HeroClass getFirstSpecialization() { return firstSpecialization; }
 
     // ── Protected setters used by TestHero for direct stat control in tests ──
     protected void setAttackDirect(int v)               { this.attack = v; }

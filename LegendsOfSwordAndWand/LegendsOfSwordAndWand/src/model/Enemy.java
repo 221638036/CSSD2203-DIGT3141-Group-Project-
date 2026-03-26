@@ -3,6 +3,8 @@ package model;
 public class Enemy {
     private String name;
     private int hp, maxHp, attack, defense, level, goldReward, xpReward;
+    private boolean stunned;
+    private Hero linkedHero;
 
     public Enemy(String name, int level) {
         this.name = name;
@@ -12,6 +14,7 @@ public class Enemy {
         this.defense = 2 + level;
         this.goldReward = 10 + level * 5;
         this.xpReward = 20 + level * 10;
+        this.stunned = false;
     }
 
     /** Constructor for tests: full control over stats */
@@ -20,12 +23,20 @@ public class Enemy {
         this.maxHp = hp; this.hp = hp;
         this.attack = attack; this.defense = defense;
         this.goldReward = goldReward; this.xpReward = xpReward;
+        this.stunned = false;
     }
 
     /** Damage formula per TC01: max(0, incomingDamage - defense). Minimum damage is 0. */
-    public void takeDamage(int dmg) { hp = Math.max(0, hp - Math.max(0, dmg - defense)); }
+    public void takeDamage(int dmg) {
+        if (linkedHero != null) {
+            linkedHero.takeDamage(dmg);
+            hp = linkedHero.getHp();
+        } else {
+            hp = Math.max(0, hp - Math.max(0, dmg - defense));
+        }
+    }
 
-    public boolean isAlive()   { return hp > 0; }
+    public boolean isAlive()   { return linkedHero != null ? linkedHero.isAlive() : hp > 0; }
     public String getName()    { return name; }
     public int getHp()         { return hp; }
     public int getMaxHp()      { return maxHp; }
@@ -34,7 +45,18 @@ public class Enemy {
     public int getLevel()      { return level; }
     public int getGoldReward() { return goldReward; }
     public int getXpReward()   { return xpReward; }
-
+    public boolean isStunned() { return stunned; }
+    public void setStunned(boolean s) { this.stunned = s; }
+    public Hero getLinkedHero() { return linkedHero; }
+    public void setLinkedHero(Hero linkedHero) {
+        this.linkedHero = linkedHero;
+        if (linkedHero != null) {
+            this.hp = linkedHero.getHp();
+            this.maxHp = linkedHero.getMaxHp();
+            this.attack = linkedHero.getAttack();
+            this.defense = linkedHero.getDefense();
+        }
+    }
     @Override
     public String toString() {
         return String.format("%s [Lv%d] HP:%d/%d ATK:%d DEF:%d", name, level, hp, maxHp, attack, defense);
