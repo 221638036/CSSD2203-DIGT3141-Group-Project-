@@ -100,11 +100,9 @@ public class GameStateManager {
     }
 
     private void handleEndOfCampaign() {
-        // Campaign won - track as victory
-        loggedInProfile.incrementWins();
+        // Campaign complete — save score, go back to map so player can choose to save party
         FileDataManager.getInstance().saveProfile(loggedInProfile);
-        // GUI will prompt to save party; transition to profile
-        transition(GameState.PROFILE_VIEW);
+        transition(GameState.CAMPAIGN_MAP);
     }
 
     public void battleEnded(boolean won) {
@@ -152,8 +150,32 @@ public class GameStateManager {
             }
         }
 
-        FileDataManager.getInstance().saveProfile(loggedInProfile);
-        transition(won ? GameState.CAMPAIGN_MAP : GameState.INN);
+        if (battleEngine != null && battleEngine.isPvpMode()) {
+            // PvP: update win/loss for BOTH players
+            String opponentUsername = battleEngine.getOpponentUsername();
+            if (won) {
+                loggedInProfile.incrementWins();
+            } else {
+                loggedInProfile.incrementLosses();
+            }
+            // Update opponent's record
+            if (opponentUsername != null) {
+                Profile opponentProfile = FileDataManager.getInstance().getAllProfiles()
+                    .stream().filter(p -> p.getUsername().equals(opponentUsername))
+                    .findFirst().orElse(null);
+                if (opponentProfile != null) {
+                    if (won) opponentProfile.incrementLosses();
+                    else     opponentProfile.incrementWins();
+                    FileDataManager.getInstance().saveProfile(opponentProfile);
+                }
+            }
+            FileDataManager.getInstance().saveProfile(loggedInProfile);
+            transition(GameState.MAIN_MENU);
+        } else {
+            // PvE: go back to campaign map on win, inn on loss
+            FileDataManager.getInstance().saveProfile(loggedInProfile);
+            transition(won ? GameState.CAMPAIGN_MAP : GameState.INN);
+        }
     }
 
     public void leaveInn() {
@@ -183,9 +205,8 @@ public class GameStateManager {
         Party myParty  = loggedInProfile.getSavedParties().get(myPartyIndex);
         Party oppParty = opponent.getSavedParties().get(0);
 
-        // Local player is myParty, opponent is oppParty. Start with opponent's turn.
-        battleEngine = new BattleEngine(myParty, oppParty, true);
-        battleEngine.setOpponentTurn(true);
+        // Challenger (myParty) always goes first (isOpponentTurn = false by default)
+        battleEngine = new BattleEngine(myParty, oppParty, true, opponentUsername);
         transition(GameState.BATTLE);
         return true;
     }

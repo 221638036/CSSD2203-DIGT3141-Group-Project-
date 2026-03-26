@@ -5,83 +5,112 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 public class BattleEngine {
-    private Party playerParty;
-    private List<Enemy> enemies;
-    private Party opponentParty;
-    private List<Enemy> pvpPlayerEnemies = new ArrayList<>();
-    private List<Enemy> pvpOpponentEnemies = new ArrayList<>();
+    private Party playerParty;       // the challenger (person who clicked Challenge)
+    private List<Enemy> enemies;     // used in PvE only
+    private Party opponentParty;     // used in PvP only
+
     private List<BattleObserver> observers = new ArrayList<>();
     private int currentHeroIndex = 0;
-    private boolean battleOver = false;
-    private boolean playerWon = false;
-    private boolean pvpMode = false;
+    private boolean battleOver  = false;
+    private boolean playerWon   = false;
+    private boolean pvpMode     = false;
+
+    /**
+     * PvP turn tracking.
+     * false = player's turn (challenger acts, opponent is the target).
+     * true  = opponent's turn (opponent acts, challenger is the target).
+     */
     private boolean isOpponentTurn = false;
+    private String opponentUsername = null;  // for win/loss tracking
+
     private Set<String> defendingHeroes = new HashSet<>();
 
+    // ── PvE constructor ───────────────────────────────────────────────────────
     public BattleEngine(Party playerParty, List<Enemy> enemies) {
-        this(playerParty, enemies, false);
-    }
-
-    public BattleEngine(Party playerParty, List<Enemy> enemies, boolean pvpMode) {
-        this.playerParty = playerParty;
-        this.enemies = enemies;
-        this.pvpMode = pvpMode;
+        this.playerParty  = playerParty;
+        this.enemies      = enemies;
+        this.pvpMode      = false;
         this.opponentParty = null;
-        this.isOpponentTurn = false;
     }
 
+    // ── PvP constructor ───────────────────────────────────────────────────────
     public BattleEngine(Party playerParty, Party opponentParty, boolean pvpMode) {
-        this.playerParty = playerParty;
-        this.opponentParty = opponentParty;
-        this.enemies = new ArrayList<>();
-        this.pvpMode = pvpMode;
-        this.isOpponentTurn = false;
-        initializePvpEnemies();
+        this(playerParty, opponentParty, pvpMode, null);
     }
 
-    private void initializePvpEnemies() {
-        pvpPlayerEnemies.clear();
-        pvpOpponentEnemies.clear();
-
-        for (Hero h : playerParty.getMembers()) {
-            Enemy e = new Enemy(h.getName(), h.getHp(), h.getAttack(), h.getDefense(), 0, 0);
-            e.setLinkedHero(h);
-            pvpPlayerEnemies.add(e);
-        }
-        for (Hero h : opponentParty.getMembers()) {
-            Enemy e = new Enemy(h.getName(), h.getHp(), h.getAttack(), h.getDefense(), 0, 0);
-            e.setLinkedHero(h);
-            pvpOpponentEnemies.add(e);
-        }
+    public BattleEngine(Party playerParty, Party opponentParty, boolean pvpMode, String opponentUsername) {
+        this.playerParty       = playerParty;
+        this.opponentParty     = opponentParty;
+        this.enemies           = new ArrayList<>();
+        this.pvpMode           = pvpMode;
+        this.isOpponentTurn    = false;
+        this.opponentUsername  = opponentUsername;
     }
 
+    // ── Observers ─────────────────────────────────────────────────────────────
     public void addObserver(BattleObserver obs)    { observers.add(obs); }
     public void removeObserver(BattleObserver obs) { observers.remove(obs); }
 
-    private void notifyEvent(String msg)        { for (BattleObserver o : observers) o.onBattleEvent(msg); }
-    private void notifyBattleEnd(boolean won)   { for (BattleObserver o : observers) o.onBattleEnd(won); }
-    private void notifyTurnChanged(int idx)     { for (BattleObserver o : observers) o.onTurnChanged(idx); }
+    private void notifyEvent(String msg)      { for (BattleObserver o : observers) o.onBattleEvent(msg); }
+    private void notifyBattleEnd(boolean won) { for (BattleObserver o : observers) o.onBattleEnd(won); }
+    private void notifyTurnChanged(int idx)   { for (BattleObserver o : observers) o.onTurnChanged(idx); }
 
-    public Party getCurrentParty() { return isOpponentTurn ? opponentParty : playerParty; }
-    public Party getOtherParty() { return isOpponentTurn ? playerParty : opponentParty; }
-    public List<Hero> getOpponentHeroes() { return pvpMode ? getOtherParty().getAliveMembers() : null; }
-    public boolean isOpponentTurn() { return isOpponentTurn; }
-    public void setOpponentTurn(boolean isOpponentTurn) { this.isOpponentTurn = isOpponentTurn; }
+    // ── PvP perspective helpers ───────────────────────────────────────────────
 
+    /**
+     * The party whose heroes are ACTING this turn.
+     * On the challenger's turn  → playerParty.
+     * On the opponent's turn    → opponentParty.
+     */
+    public Party getActingParty() {
+        if (!pvpMode) return playerParty;
+        return isOpponentTurn ? opponentParty : playerParty;
+    }
+
+    /**
+     * The party that is being TARGETED this turn.
+     * On the challenger's turn  → opponentParty.
+     * On the opponent's turn    → playerParty.
+     */
+    public Party getTargetParty() {
+        if (!pvpMode) return null;
+        return isOpponentTurn ? playerParty : opponentParty;
+    }
+
+    /** Which hero is currently acting */
     public Hero getCurrentHero() {
-        List<Hero> alive = getCurrentParty().getAliveMembers();
+        List<Hero> alive = getActingParty().getAliveMembers();
         if (alive.isEmpty()) return null;
         return alive.get(currentHeroIndex % alive.size());
     }
 
+    /**
+     * In PvE: alive enemies from the enemy list.
+     * In PvP: alive heroes from the TARGET (non-acting) party, wrapped as Enemy proxies
+     *         so the action system can damage them.
+     *
+     * We keep PvP targets as Hero objects and damage them directly via EnemyHeroProxy.
+     */
     public List<Enemy> getAliveEnemies() {
-        if (pvpMode) {
-            List<Enemy> others = isOpponentTurn ? pvpPlayerEnemies : pvpOpponentEnemies;
-            return others.stream().filter(Enemy::isAlive).collect(Collectors.toList());
-        } else {
-            return enemies.stream().filter(e -> e.isAlive()).collect(Collectors.toList());
+        if (!pvpMode) {
+            return enemies.stream().filter(Enemy::isAlive).collect(Collectors.toList());
         }
+        // In PvP the "enemies" are the heroes of the target party
+        return getTargetParty().getMembers().stream()
+            .filter(Hero::isAlive)
+            .map(EnemyHeroProxy::new)
+            .collect(Collectors.toList());
     }
+
+    /** Full enemy list (including defeated) — used by BattlePanel for display */
+    public List<Enemy> getEnemies() {
+        if (!pvpMode) return enemies;
+        return getTargetParty().getMembers().stream()
+            .map(EnemyHeroProxy::new)
+            .collect(Collectors.toList());
+    }
+
+    // ── Actions ───────────────────────────────────────────────────────────────
 
     public void playerAction(BattleAction action, int targetIndex) {
         if (battleOver) return;
@@ -89,14 +118,13 @@ public class BattleEngine {
         if (hero == null || !hero.isAlive()) { advanceTurn(); return; }
 
         if (hero.isStunned()) {
-            notifyEvent(hero.getName() + " is stunned and skips their turn!");
+            notifyEvent(hero.getName() + " is stunned and loses their turn!");
             hero.setStunned(false);
-            enemyTurn();
+            if (!pvpMode) enemyTurn();
             advanceTurn();
             return;
         }
 
-        // Build target list: chosen target first, then rest
         List<Enemy> aliveEnemies = getAliveEnemies();
         List<Enemy> targetList = new ArrayList<>();
         if (!aliveEnemies.isEmpty()) {
@@ -107,21 +135,34 @@ public class BattleEngine {
 
         if (action instanceof BattleActions.Defend) defendingHeroes.add(hero.getName());
 
-        String result = action.execute(hero, targetList, getCurrentParty());
+        String result = action.execute(hero, targetList, getActingParty());
         notifyEvent(result);
         checkBattleEnd();
-        if (!battleOver) { 
-            if (!pvpMode) enemyTurn(); 
-            advanceTurn(); 
+        if (!battleOver) {
+            if (!pvpMode) enemyTurn();
+            advanceTurn();
+        }
+    }
+
+    public void useItem(Hero user, Item item, Hero target, Party party) {
+        if (battleOver) return;
+        if (!party.getInventory().contains(item)) return;
+        item.use(target);
+        party.removeItem(item);
+        notifyEvent(user.getName() + " used " + item.getName() + " on " + target.getName() + "!");
+        checkBattleEnd();
+        if (!battleOver) {
+            if (!pvpMode) enemyTurn();
+            advanceTurn();
         }
     }
 
     private void enemyTurn() {
-        if (pvpMode) return;
+        // PvE only
         List<Hero> alive = playerParty.getAliveMembers();
         if (alive.isEmpty()) return;
         Random rand = new Random();
-        for (Enemy enemy : getAliveEnemies()) {
+        for (Enemy enemy : enemies.stream().filter(Enemy::isAlive).collect(Collectors.toList())) {
             if (enemy.isStunned()) {
                 notifyEvent(enemy.getName() + " is stunned and skips their turn!");
                 enemy.setStunned(false);
@@ -131,8 +172,9 @@ public class BattleEngine {
             int dmg = enemy.getAttack();
             if (defendingHeroes.contains(target.getName())) dmg /= 2;
             target.takeDamage(dmg);
-            notifyEvent(enemy.getName() + " attacks " + target.getName() + " for " + dmg + " damage!"
-                + (!target.isAlive() ? " " + target.getName() + " is defeated!" : ""));
+            int effective = Math.max(0, dmg - target.getDefense());
+            notifyEvent(enemy.getName() + " attacks " + target.getName() + " for " + effective + " damage!"
+                + (!target.isAlive() ? "  " + target.getName() + " is defeated!" : ""));
         }
         defendingHeroes.clear();
         checkBattleEnd();
@@ -140,42 +182,48 @@ public class BattleEngine {
 
     private void advanceTurn() {
         if (battleOver) return;
-        List<Hero> alive = getCurrentParty().getAliveMembers();
+        List<Hero> alive = getActingParty().getAliveMembers();
         if (alive.isEmpty()) return;
         currentHeroIndex = (currentHeroIndex + 1) % alive.size();
-        if (currentHeroIndex == 0) {
-            if (pvpMode) {
-                isOpponentTurn = !isOpponentTurn;
-            }
+
+        // When we've cycled through all of the acting party's heroes, switch sides (PvP)
+        if (pvpMode && currentHeroIndex == 0) {
+            isOpponentTurn = !isOpponentTurn;
+            notifyEvent(isOpponentTurn
+                ? "--- Opponent's turn ---"
+                : "--- Your turn ---");
         }
         notifyTurnChanged(currentHeroIndex);
     }
 
     private void checkBattleEnd() {
         if (pvpMode) {
-            if (getOtherParty().isDefeated()) {
+            boolean opponentDefeated = opponentParty.isDefeated();
+            boolean playerDefeated   = playerParty.isDefeated();
+            if (opponentDefeated || playerDefeated) {
                 battleOver = true;
-                playerWon = !isOpponentTurn; // if opponent is defeated, the current player wins
-                notifyEvent("Victory! The " + (isOpponentTurn ? "opponent" : "your") + " party has been defeated!");
+                // playerWon = true means the challenger (playerParty) won
+                playerWon  = opponentDefeated && !playerDefeated;
+                String msg = playerWon ? "🏆 Your party wins the PvP battle!" : "💀 Opponent's party wins the PvP battle!";
+                notifyEvent(msg);
                 notifyBattleEnd(playerWon);
             }
         } else {
-            if (getAliveEnemies().isEmpty()) {
+            List<Enemy> aliveEnemies = enemies.stream().filter(Enemy::isAlive).collect(Collectors.toList());
+            if (aliveEnemies.isEmpty()) {
                 battleOver = true; playerWon = true;
-
                 int totalGold = 0, totalXp = 0;
                 for (Enemy e : enemies) {
                     totalGold += e.getGoldReward() * e.getLevel();
                     totalXp  += e.getXpReward()   * e.getLevel();
                 }
-
                 playerParty.earnGold(totalGold);
                 List<Hero> survivors = playerParty.getAliveMembers();
                 if (!survivors.isEmpty()) {
                     int xpEach = totalXp / survivors.size();
                     for (Hero h : survivors) h.addXp(xpEach);
                 }
-                notifyEvent("Victory! Earned " + totalGold + " gold and " + totalXp + " XP split among " + playerParty.getAliveMembers().size() + " survivors!");
+                notifyEvent("Victory! Earned " + totalGold + " gold and " + totalXp + " XP split among " + survivors.size() + " survivors!");
                 notifyBattleEnd(true);
             } else if (playerParty.isDefeated()) {
                 battleOver = true; playerWon = false;
@@ -185,24 +233,48 @@ public class BattleEngine {
         }
     }
 
-    public void useItem(Hero user, Item item, Hero target, Party party) {
-        if (battleOver) return;
-        if (!party.getInventory().contains(item)) return;
+    // ── Getters ───────────────────────────────────────────────────────────────
+    public boolean isBattleOver()    { return battleOver; }
+    public String getOpponentUsername() { return opponentUsername; }
+    public boolean isPlayerWon()     { return playerWon; }
+    public Party getPlayerParty()    { return playerParty; }
+    public Party getOpponentParty()  { return opponentParty; }
+    public boolean isPvpMode()       { return pvpMode; }
+    public boolean isOpponentTurn()  { return isOpponentTurn; }
+    public void setOpponentTurn(boolean b) { this.isOpponentTurn = b; }
 
-        item.use(target);
-        party.removeItem(item);
-        notifyEvent(user.getName() + " used " + item.getName() + " on " + target.getName() + "!");
-        checkBattleEnd();
-        if (!battleOver) { 
-            if (!pvpMode) enemyTurn(); 
-            advanceTurn(); 
+    // ── Inner class: wraps a Hero as an Enemy for the action system ───────────
+    /**
+     * In PvP, the "enemy" targets are actually Hero objects from the opposing party.
+     * This proxy lets BattleActions damage them via the normal Enemy API while
+     * keeping the Hero's real HP updated.
+     */
+    public static class EnemyHeroProxy extends Enemy {
+        private final Hero hero;
+
+        public EnemyHeroProxy(Hero hero) {
+            super(hero.getName(), hero.getHp(), hero.getAttack(), hero.getDefense(), 0, 0);
+            this.hero = hero;
         }
-    }
 
-    public boolean isBattleOver()   { return battleOver; }
-    public boolean isPlayerWon()    { return playerWon; }
-    public Party getPlayerParty()   { return playerParty; }
-    public Party getOpponentParty() { return opponentParty; }
-    public List<Enemy> getEnemies() { return enemies; }
-    public boolean isPvpMode()      { return pvpMode; }
+        @Override
+        public void takeDamage(int dmg) {
+            // Damage goes to the real Hero object
+            hero.takeDamage(dmg);
+            // Keep proxy HP in sync so isAlive() works correctly
+            syncHp();
+        }
+
+        @Override
+        public boolean isAlive() { return hero.isAlive(); }
+
+        @Override
+        public int getHp()    { return hero.getHp(); }
+        @Override
+        public int getMaxHp() { return hero.getMaxHp(); }
+
+        private void syncHp() { /* hero manages its own hp */ }
+
+        public Hero getHero() { return hero; }
+    }
 }
